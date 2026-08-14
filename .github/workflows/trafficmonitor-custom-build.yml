@@ -45,6 +45,55 @@ jobs:
         run: |
           msbuild TrafficMonitorUpstream/TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
 
+      - name: Package full patched source
+        shell: pwsh
+        run: |
+          $sourceRoot = Join-Path $PWD 'full_source_package'
+          $patchedRoot = Join-Path $sourceRoot 'TrafficMonitor-V1.86-Tailscale'
+          New-Item -ItemType Directory -Force $patchedRoot | Out-Null
+
+          Copy-Item (Join-Path $PWD 'TrafficMonitorUpstream/*') $patchedRoot -Recurse -Force
+
+          $integrationDir = Join-Path $patchedRoot '_integration'
+          New-Item -ItemType Directory -Force $integrationDir | Out-Null
+          Copy-Item (Join-Path $PWD 'trafficmonitor_remote/*') $integrationDir -Recurse -Force
+          Copy-Item (Join-Path $PWD '.github/workflows/trafficmonitor-custom-build.yml') (Join-Path $integrationDir 'trafficmonitor-custom-build.yml') -Force
+
+          @'
+          # TrafficMonitor V1.86 + Tailscale/SSH full source
+
+          This directory is the complete TrafficMonitor V1.86 source tree after the remote-monitor patches have already been applied.
+
+          Build target tested in GitHub Actions:
+          - Windows Server 2022
+          - Visual Studio 2022 / MSVC v143
+          - x64 Release
+
+          Build command:
+          msbuild TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
+
+          Integrated additions:
+          - TrafficMonitor/RemoteMonitor.h
+          - TrafficMonitor/RemoteMonitor.cpp
+          - modifications to TrafficMonitorDlg.cpp
+          - modifications to SkinFile.cpp
+          - modifications to TrafficMonitor.vcxproj
+          - native TrafficMonitor context-menu SSH/Tailscale settings
+          - remote upload/download, uptime, temperature, root disk, CPU
+          - monochrome vector icons rendered by TrafficMonitor itself
+
+          The _integration folder contains the patch/build helper files used to reproduce the modified tree from the upstream V1.86 tag.
+          '@ | Set-Content (Join-Path $patchedRoot 'TAILSCALE_SOURCE_README.md') -Encoding UTF8
+
+          Compress-Archive -Path (Join-Path $sourceRoot '*') -DestinationPath (Join-Path $PWD 'TrafficMonitor_V1.86_Tailscale_Full_Source.zip') -Force
+
+      - name: Upload full source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrafficMonitor-Tailscale-Full-Source
+          path: TrafficMonitor_V1.86_Tailscale_Full_Source.zip
+          if-no-files-found: error
+
       - name: Package complete V1.86 distribution
         shell: pwsh
         run: |
