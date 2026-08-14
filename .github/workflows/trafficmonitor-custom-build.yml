@@ -9,6 +9,10 @@ on:
       - '.github/workflows/trafficmonitor-custom-build.yml'
   workflow_dispatch:
 
+concurrency:
+  group: trafficmonitor-custom-x64
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-2022
@@ -40,36 +44,52 @@ jobs:
         run: |
           msbuild TrafficMonitorUpstream/TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
 
-      - name: Package
+      - name: Package complete V1.86 distribution
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force package | Out-Null
-          Copy-Item TrafficMonitorUpstream/Bin/x64/Release/TrafficMonitor.exe package/TrafficMonitor.exe
-          Copy-Item TrafficMonitorUpstream/Bin/x64/Release/*.dll package/ -ErrorAction SilentlyContinue
-          Copy-Item TrafficMonitorUpstream/LICENSE package/LICENSE
+          $releaseZip = Join-Path $PWD 'TrafficMonitor_V1.86_x64.zip'
+          $releaseDir = Join-Path $PWD 'official_release'
+          $packageDir = Join-Path $PWD 'package'
+
+          Invoke-WebRequest -Uri 'https://github.com/zhongyang219/TrafficMonitor/releases/download/V1.86/TrafficMonitor_V1.86_x64.zip' -OutFile $releaseZip
+          Expand-Archive -Path $releaseZip -DestinationPath $releaseDir -Force
+
+          $officialExe = Get-ChildItem -Path $releaseDir -Recurse -Filter TrafficMonitor.exe | Select-Object -First 1
+          if ($null -eq $officialExe) { throw 'TrafficMonitor.exe not found in official release zip' }
+          $officialRoot = Split-Path -Parent $officialExe.FullName
+
+          New-Item -ItemType Directory -Force $packageDir | Out-Null
+          Copy-Item (Join-Path $officialRoot '*') $packageDir -Recurse -Force
+
+          Copy-Item TrafficMonitorUpstream/Bin/x64/Release/TrafficMonitor.exe (Join-Path $packageDir 'TrafficMonitor.exe') -Force
+          Copy-Item TrafficMonitorUpstream/Bin/x64/Release/*.dll $packageDir -Force -ErrorAction SilentlyContinue
+          Copy-Item TrafficMonitorUpstream/LICENSE (Join-Path $packageDir 'LICENSE') -Force
+
           @'
-          TrafficMonitor integrated Tailscale/SSH server monitor
+          TrafficMonitor V1.86 + integrated Tailscale / SSH server monitor
 
-          First run creates:
-          %APPDATA%\TrafficMonitor\remote_monitor.ini
+          Usage:
+          1. Start TrafficMonitor.exe normally.
+          2. Right-click the TrafficMonitor main window.
+          3. Choose "Tailscale / SSH Server...".
+          4. Enter Tailscale IP/hostname, SSH user, port and optional private key.
+          5. Enable the remote monitor and click Save.
 
-          Close TrafficMonitor, edit the file, set:
-          Enabled=1
-          Host=100.x.x.x
-          User=your-user
-          Port=22
-          KeyPath=C:\Users\you\.ssh\id_ed25519
+          Disabled: original TrafficMonitor layout only.
+          Enabled: the same TrafficMonitor window adds two rows:
+          row 2: remote upload / download / uptime
+          row 3: temperature / root disk usage / CPU usage
 
-          Start TrafficMonitor again. When enabled, the same TrafficMonitor window gains two rows:
-          row 2: upload / download / uptime
-          row 3: temperature / disk / CPU
+          Remote Linux host does not require a monitoring agent.
+          Authentication in this build: Windows OpenSSH private key or ssh-agent.
+          Settings are stored in %APPDATA%\TrafficMonitor\remote_monitor.ini.
+          '@ | Set-Content (Join-Path $packageDir 'REMOTE_MONITOR_README.txt') -Encoding UTF8
 
-          This build currently uses Windows OpenSSH key/agent authentication.
-          '@ | Set-Content package/REMOTE_MONITOR_README.txt -Encoding UTF8
+          Get-FileHash (Join-Path $packageDir 'TrafficMonitor.exe') -Algorithm SHA256 | Format-List
 
-      - name: Upload x64 package
+      - name: Upload complete x64 package
         uses: actions/upload-artifact@v4
         with:
           name: TrafficMonitor-Tailscale-x64
-          path: package/*
+          path: package/**
           if-no-files-found: error
