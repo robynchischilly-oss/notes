@@ -1,0 +1,75 @@
+name: TrafficMonitor Custom x64
+
+on:
+  push:
+    branches:
+      - trafficmonitor-custom-build
+    paths:
+      - 'trafficmonitor_remote/**'
+      - '.github/workflows/trafficmonitor-custom-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout integration files
+        uses: actions/checkout@v4
+
+      - name: Checkout TrafficMonitor V1.86
+        uses: actions/checkout@v4
+        with:
+          repository: zhongyang219/TrafficMonitor
+          ref: V1.86
+          path: TrafficMonitorUpstream
+
+      - name: Inject integrated remote monitor
+        shell: pwsh
+        run: |
+          Copy-Item trafficmonitor_remote/RemoteMonitor.h TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.h -Force
+          Copy-Item trafficmonitor_remote/RemoteMonitor.cpp TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.cpp -Force
+          python trafficmonitor_remote/patch_trafficmonitor.py TrafficMonitorUpstream
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build x64 Release
+        shell: pwsh
+        run: |
+          msbuild TrafficMonitorUpstream/TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item TrafficMonitorUpstream/Bin/x64/Release/TrafficMonitor.exe package/TrafficMonitor.exe
+          Copy-Item TrafficMonitorUpstream/Bin/x64/Release/*.dll package/ -ErrorAction SilentlyContinue
+          Copy-Item TrafficMonitorUpstream/LICENSE package/LICENSE
+          @'
+          TrafficMonitor integrated Tailscale/SSH server monitor
+
+          First run creates:
+          %APPDATA%\TrafficMonitor\remote_monitor.ini
+
+          Close TrafficMonitor, edit the file, set:
+          Enabled=1
+          Host=100.x.x.x
+          User=your-user
+          Port=22
+          KeyPath=C:\Users\you\.ssh\id_ed25519
+
+          Start TrafficMonitor again. When enabled, the same TrafficMonitor window gains two rows:
+          row 2: upload / download / uptime
+          row 3: temperature / disk / CPU
+
+          This build currently uses Windows OpenSSH key/agent authentication.
+          '@ | Set-Content package/REMOTE_MONITOR_README.txt -Encoding UTF8
+
+      - name: Upload x64 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrafficMonitor-Tailscale-x64
+          path: package/*
+          if-no-files-found: error
