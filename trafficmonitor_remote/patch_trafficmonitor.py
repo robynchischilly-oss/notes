@@ -18,7 +18,7 @@ def replace_once(text, old, new, label):
         raise RuntimeError(f"patch anchor not found: {label}")
     return text.replace(old, new, 1)
 
-# TrafficMonitorDlg.cpp: lifetime + same-window height extension.
+# TrafficMonitorDlg.cpp: lifetime + same-window height extension + native context-menu settings entry.
 p = tm / "TrafficMonitorDlg.cpp"
 s = read(p)
 s = replace_once(s,
@@ -41,6 +41,10 @@ s = replace_once(s, old_setpos, new_setpos, "SetItemPosition")
 old_image = '''    if (theApp.m_cfg_data.m_show_more_info)\n    {\n        image_size.SetSize(m_skin.GetLayoutInfo().layout_l.width, m_skin.GetLayoutInfo().layout_l.height);\n    }\n    else\n    {\n        image_size.SetSize(m_skin.GetLayoutInfo().layout_s.width, m_skin.GetLayoutInfo().layout_s.height);\n    }\n\n    //创建窗口区域\n'''
 new_image = '''    if (theApp.m_cfg_data.m_show_more_info)\n    {\n        image_size.SetSize(m_skin.GetLayoutInfo().layout_l.width, m_skin.GetLayoutInfo().layout_l.height);\n    }\n    else\n    {\n        image_size.SetSize(m_skin.GetLayoutInfo().layout_s.width, m_skin.GetLayoutInfo().layout_s.height);\n    }\n    image_size.cy += CRemoteMonitor::Instance().ExtraRows() * m_skin.GetLayoutInfo().text_height;\n\n    //创建窗口区域\n'''
 s = replace_once(s, old_image, new_image, "LoadBackGroundImage size")
+
+old_popup = '''    pContextMenu->TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point1.x, point1.y, this); //在指定位置显示弹出菜单\n\n    CDialog::OnRButtonUp(nFlags, point1);\n'''
+new_popup = '''    // Remote monitor is part of TrafficMonitor itself: add its settings entry to the existing context menu.\n    if (pContextMenu->GetMenuState(ID_REMOTE_MONITOR_SETTINGS, MF_BYCOMMAND) == static_cast<UINT>(-1))\n    {\n        int options_pos = CCommon::GetMenuItemPosition(pContextMenu, ID_OPTIONS);\n        if (options_pos >= 0)\n            pContextMenu->InsertMenu(options_pos, MF_BYPOSITION | MF_STRING, ID_REMOTE_MONITOR_SETTINGS, _T("Tailscale / SSH Server..."));\n        else\n            pContextMenu->AppendMenu(MF_STRING, ID_REMOTE_MONITOR_SETTINGS, _T("Tailscale / SSH Server..."));\n    }\n\n    UINT selected_command = static_cast<UINT>(pContextMenu->TrackPopupMenu(\n        TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, point1.x, point1.y, this));\n    if (selected_command == ID_REMOTE_MONITOR_SETTINGS)\n    {\n        if (CRemoteMonitor::Instance().ShowSettings(GetSafeHwnd()))\n        {\n            SetItemPosition();\n            LoadBackGroundImage();\n            CheckWindowPos();\n            Invalidate(FALSE);\n        }\n    }\n    else if (selected_command != 0)\n    {\n        SendMessage(WM_COMMAND, selected_command);\n    }\n\n    CDialog::OnRButtonUp(nFlags, point1);\n'''
+s = replace_once(s, old_popup, new_popup, "context menu remote settings")
 write(p, s)
 
 # SkinFile.cpp: render the two server rows in TrafficMonitor's own paint pass.
@@ -143,4 +147,4 @@ s = replace_once(s,
     "vcxproj source")
 write(p, s)
 
-print("TrafficMonitor V1.86 patched with integrated remote monitor")
+print("TrafficMonitor V1.86 patched with integrated remote monitor and settings UI")
