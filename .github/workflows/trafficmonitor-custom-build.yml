@@ -35,6 +35,7 @@ jobs:
           Copy-Item trafficmonitor_remote/RemoteMonitor.h TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.h -Force
           Copy-Item trafficmonitor_remote/RemoteMonitor.cpp TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.cpp -Force
           python trafficmonitor_remote/patch_trafficmonitor.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_icons.py TrafficMonitorUpstream
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -78,7 +79,7 @@ jobs:
           Disabled: original TrafficMonitor layout only.
           Enabled: the same TrafficMonitor window adds two rows:
           row 2: remote upload / download / uptime
-          row 3: temperature / root disk usage / CPU usage
+          row 3: vector temperature icon / disk icon / CPU icon with values
 
           Remote Linux host does not require a monitoring agent.
           Authentication in this build: Windows OpenSSH private key or ssh-agent.
