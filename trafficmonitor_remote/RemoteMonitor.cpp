@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "RemoteMonitor.h"
-#include <algorithm>
 #include <sstream>
 
 namespace
@@ -8,8 +7,17 @@ namespace
     std::wstring ReadIniString(const std::wstring& file, const wchar_t* key, const wchar_t* def = L"")
     {
         wchar_t buf[2048]{};
-        ::GetPrivateProfileStringW(L"RemoteMonitor", key, def, buf, static_cast<DWORD>(std::size(buf)), file.c_str());
+        ::GetPrivateProfileStringW(L"RemoteMonitor", key, def, buf, static_cast<DWORD>(_countof(buf)), file.c_str());
         return buf;
+    }
+
+    int ClampInt(int value, int low, int high)
+    {
+        if (value < low)
+            return low;
+        if (value > high)
+            return high;
+        return value;
     }
 
     std::wstring QuoteArg(const std::wstring& value)
@@ -148,8 +156,12 @@ void CRemoteMonitor::LoadConfig()
     m_host = ReadIniString(file, L"Host");
     m_user = ReadIniString(file, L"User");
     m_key_path = ReadIniString(file, L"KeyPath");
-    m_port = std::clamp(static_cast<int>(::GetPrivateProfileIntW(L"RemoteMonitor", L"Port", 22, file.c_str())), 1, 65535);
-    m_interval_ms = std::clamp(static_cast<int>(::GetPrivateProfileIntW(L"RemoteMonitor", L"IntervalMs", 1000, file.c_str())), 1000, 60000);
+
+    int port = static_cast<int>(::GetPrivateProfileIntW(L"RemoteMonitor", L"Port", 22, file.c_str()));
+    m_port = ClampInt(port, 1, 65535);
+    int interval = static_cast<int>(::GetPrivateProfileIntW(L"RemoteMonitor", L"IntervalMs", 1000, file.c_str()));
+    m_interval_ms = ClampInt(interval, 1000, 60000);
+
     m_show_upload = ::GetPrivateProfileIntW(L"RemoteMonitor", L"ShowUpload", 1, file.c_str()) != 0;
     m_show_download = ::GetPrivateProfileIntW(L"RemoteMonitor", L"ShowDownload", 1, file.c_str()) != 0;
     m_show_uptime = ::GetPrivateProfileIntW(L"RemoteMonitor", L"ShowUptime", 1, file.c_str()) != 0;
@@ -184,7 +196,8 @@ std::wstring CRemoteMonitor::ResolveExecutable(const std::wstring&) const
 
 std::wstring CRemoteMonitor::BuildRemoteCommand() const
 {
-    const int interval_seconds = std::max(1, (m_interval_ms + 999) / 1000);
+    const int candidate = (m_interval_ms + 999) / 1000;
+    const int interval_seconds = candidate < 1 ? 1 : candidate;
     std::wstringstream ss;
     ss << L"sh -c 'while :; do "
        << L"read _ u n s i w q sq st g gn < /proc/stat; total=$((u+n+s+i+w+q+sq+st)); idle=$((i+w)); "
@@ -326,8 +339,9 @@ void CRemoteMonitor::ParseFrame(const std::vector<std::string>& f)
     ToUInt64(f[9], ma);
 
     const int temp_mc = atoi(f[6].c_str());
-    const int disk = std::clamp(atoi(f[7].c_str()), 0, 100);
-    const int cores = std::max(1, atoi(f[10].c_str()));
+    const int disk = ClampInt(atoi(f[7].c_str()), 0, 100);
+    const int parsed_cores = atoi(f[10].c_str());
+    const int cores = parsed_cores < 1 ? 1 : parsed_cores;
     const ULONGLONG now = ::GetTickCount64();
 
     int cpu{};
@@ -336,7 +350,11 @@ void CRemoteMonitor::ParseFrame(const std::vector<std::string>& f)
         const unsigned long long dt = total - m_prev_cpu_total;
         const unsigned long long di = idle - m_prev_cpu_idle;
         if (dt > 0)
-            cpu = std::clamp(static_cast<int>((dt - std::min(dt, di)) * 100ULL / dt), 0, 100);
+        {
+            const unsigned long long safe_idle = di < dt ? di : dt;
+            const int calculated = static_cast<int>((dt - safe_idle) * 100ULL / dt);
+            cpu = ClampInt(calculated, 0, 100);
+        }
     }
 
     double down{};
