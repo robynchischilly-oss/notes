@@ -5,6 +5,8 @@
 #include <thread>
 #include <vector>
 
+constexpr UINT ID_REMOTE_MONITOR_SETTINGS = 0xE9F1;
+
 struct RemoteMonitorSnapshot
 {
     bool has_data{};
@@ -19,6 +21,22 @@ struct RemoteMonitorSnapshot
     unsigned long long mem_available_kb{};
     int cpu_cores{};
     CString ssh_user;
+};
+
+struct RemoteMonitorConfig
+{
+    bool enabled{};
+    std::wstring host;
+    std::wstring user;
+    std::wstring key_path;
+    int port{ 22 };
+    int interval_ms{ 1000 };
+    bool show_upload{ true };
+    bool show_download{ true };
+    bool show_uptime{ true };
+    bool show_temperature{ true };
+    bool show_disk{ true };
+    bool show_cpu{ true };
 };
 
 class CRemoteMonitor
@@ -40,6 +58,9 @@ public:
     bool ShowCpu() const { return m_show_cpu; }
 
     RemoteMonitorSnapshot GetSnapshot() const;
+    RemoteMonitorConfig GetConfig() const;
+    void ApplyConfig(const RemoteMonitorConfig& config);
+    bool ShowSettings(HWND parent);
 
     CString FormatSpeed(double bytes_per_second) const;
     CString FormatUptime(unsigned long long seconds) const;
@@ -51,6 +72,7 @@ private:
     CRemoteMonitor& operator=(const CRemoteMonitor&) = delete;
 
     void LoadConfig();
+    void SaveConfig() const;
     void Worker();
     bool RunStreamingSession();
     void HandleLine(const std::string& line);
@@ -85,10 +107,7 @@ private:
     std::wstring m_user;
     std::wstring m_key_path;
     int m_port{ 22 };
-    int m_interval_ms{ 2000 };
-
-    int m_frame_index{ -1 };
-    std::vector<std::string> m_frame_fields;
+    int m_interval_ms{ 1000 };
 
     unsigned long long m_prev_cpu_total{};
     unsigned long long m_prev_cpu_idle{};
