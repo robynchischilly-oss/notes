@@ -43,16 +43,24 @@ jobs:
           python trafficmonitor_remote/patch_remote_topmost.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_serverbox_status_logic.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_plink_preflight_v2.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_pinned_hostkey_1865.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_tailscale_independent_1865.py TrafficMonitorUpstream
 
-      - name: Validate SSH V2 source
+      - name: Validate SSH and independent traffic source
         shell: pwsh
         run: |
           $source = Get-Content TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.cpp -Raw
+          $skin = Get-Content TrafficMonitorUpstream/TrafficMonitor/SkinFile.cpp -Raw
           if ($source -notmatch '__TM_SSH_OK__') { throw 'Plink preflight not injected' }
           if ($source -notmatch 'collector: process started with -batch -m') { throw 'Plink -m collector not injected' }
-          if ($source -notmatch 'remote monitor 1.86.4 start') { throw 'mandatory start logging not injected' }
-          if ($source -notmatch 'Tailscale / SSH Server \[1.86.4\]') { throw 'build marker missing' }
-          if ($source -notmatch 'LR"TM_SCRIPT\(export LC_ALL=C') { throw 'multiline collector missing' }
+          if ($source -notmatch 'remote monitor 1.86.5 start') { throw '1.86.5 start marker missing' }
+          if ($source -notmatch 'Tailscale / SSH Server \[1.86.5\]') { throw '1.86.5 build marker missing' }
+          if ($source -notmatch 'SHA256:oETUWcNxt9RPbgqIP7O2XNwDlVq4djCdURO46nO08H0') { throw 'Pinned host key missing' }
+          if ($source -notmatch '\-hostkey') { throw 'Plink -hostkey missing' }
+          if ($source -notmatch '/sys/class/net/tailscale0/statistics/rx_bytes') { throw 'tailscale0 RX source missing' }
+          if ($source -match "awk -F'\[: \]\+' .*rx \+=.*tx \+=") { throw 'Regression: non-Tailscale interface aggregation is enabled' }
+          if ($skin -notmatch 'DrawItemsInfo\(.*layout.*m_font') { throw 'Original TrafficMonitor row drawing missing' }
+          if ($skin -notmatch 'DrawRemoteMonitorRows') { throw 'Independent remote rows missing' }
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -83,11 +91,17 @@ jobs:
 
           Invoke-WebRequest -Uri 'https://the.earth.li/~sgtatham/putty/0.84/w64/plink.exe' -OutFile (Join-Path $packageDir 'plink.exe')
           @'
-          TrafficMonitor V1.86 + Tailscale/SSH build 1.86.4
-          Password SSH flow:
-          1. Plink preflight authenticates and confirms first-use host key using a harmless echo command.
-          2. Monitoring runs with Plink -batch -m using a separate temporary Linux collector script.
-          Diagnostics are always written to %APPDATA%\TrafficMonitor\remote_monitor.log.
+          TrafficMonitor V1.86 + Tailscale/SSH build 1.86.5
+
+          Local TrafficMonitor traffic and remote Tailscale traffic are fully independent:
+          - original TrafficMonitor row: local PC traffic only
+          - remote row 2: Linux tailscale0 RX/TX only + uptime
+          - remote row 3: Linux temperature + root disk + CPU
+          - remote Tailscale RX/TX are never added to TrafficMonitor local totals
+          - no fallback aggregation of eth0/enp*/wlan*/docker* into the Tailscale row
+
+          SSH password flow uses bundled Plink with the verified server host key pinned via -hostkey.
+          Diagnostics: %APPDATA%\TrafficMonitor\remote_monitor.log
           '@ | Set-Content (Join-Path $packageDir 'REMOTE_MONITOR_README.txt') -Encoding UTF8
 
           Get-FileHash (Join-Path $packageDir 'TrafficMonitor.exe') -Algorithm SHA256 | Format-List
@@ -96,7 +110,7 @@ jobs:
       - name: Upload portable x64 package
         uses: actions/upload-artifact@v4
         with:
-          name: TrafficMonitor-Tailscale-1.86.4-x64
+          name: TrafficMonitor-Tailscale-1.86.5-x64
           path: package/**
           if-no-files-found: error
 
@@ -112,7 +126,7 @@ jobs:
           [Setup]
           AppId={{A96D9152-6D85-4F82-87B4-62F56F990186}
           AppName=TrafficMonitor Tailscale
-          AppVersion=1.86.4
+          AppVersion=1.86.5
           AppPublisher=TrafficMonitor custom build
           DefaultDirName={localappdata}\Programs\TrafficMonitorTailscale
           DefaultGroupName=TrafficMonitor Tailscale
@@ -121,7 +135,7 @@ jobs:
           ArchitecturesAllowed=x64compatible
           ArchitecturesInstallIn64BitMode=x64compatible
           OutputDir=installer
-          OutputBaseFilename=TrafficMonitor_V1.86_Tailscale_1.86.4_Setup_x64
+          OutputBaseFilename=TrafficMonitor_V1.86_Tailscale_1.86.5_Setup_x64
           Compression=lzma2
           SolidCompression=yes
           WizardStyle=modern
@@ -139,19 +153,16 @@ jobs:
           [Icons]
           Name: "{group}\TrafficMonitor Tailscale"; Filename: "{app}\TrafficMonitor.exe"
           Name: "{autodesktop}\TrafficMonitor Tailscale"; Filename: "{app}\TrafficMonitor.exe"; Tasks: desktopicon
-
-          ; No automatic post-install launch. TrafficMonitor V1.86 requests elevation
-          ; itself; omitting [Run] avoids CreateProcess error 740 in a lowest-privilege installer.
           '@ | Set-Content installer.iss -Encoding UTF8
 
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           & $iscc installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-          Get-FileHash installer/TrafficMonitor_V1.86_Tailscale_1.86.4_Setup_x64.exe -Algorithm SHA256 | Format-List
+          Get-FileHash installer/TrafficMonitor_V1.86_Tailscale_1.86.5_Setup_x64.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: TrafficMonitor-Tailscale-1.86.4-Installer-x64
-          path: installer/TrafficMonitor_V1.86_Tailscale_1.86.4_Setup_x64.exe
+          name: TrafficMonitor-Tailscale-1.86.5-Installer-x64
+          path: installer/TrafficMonitor_V1.86_Tailscale_1.86.5_Setup_x64.exe
           if-no-files-found: error
