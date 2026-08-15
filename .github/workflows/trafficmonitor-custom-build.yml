@@ -38,6 +38,7 @@ jobs:
           python trafficmonitor_remote/patch_icons.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_remote_runtime.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_runtime_fixes.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_password_auth.py TrafficMonitorUpstream
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -53,7 +54,6 @@ jobs:
           $sourceRoot = Join-Path $PWD 'full_source_package'
           $patchedRoot = Join-Path $sourceRoot 'TrafficMonitor-V1.86-Tailscale'
           New-Item -ItemType Directory -Force $patchedRoot | Out-Null
-
           Copy-Item (Join-Path $PWD 'TrafficMonitorUpstream/*') $patchedRoot -Recurse -Force
 
           $integrationDir = Join-Path $patchedRoot '_integration'
@@ -64,9 +64,9 @@ jobs:
           @'
           # TrafficMonitor V1.86 + Tailscale/SSH full source
 
-          This directory is the complete TrafficMonitor V1.86 source tree after the remote-monitor patches have already been applied.
+          Complete source tree with the integrated remote monitor and runtime fixes already applied.
 
-          Build target tested in GitHub Actions:
+          Tested build target:
           - Windows Server 2022
           - Visual Studio 2022 / MSVC v143
           - x64 Release
@@ -74,13 +74,15 @@ jobs:
           Build command:
           msbuild TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
 
-          Runtime fixes in this build:
+          Fixes/features:
           - always-on-top survives 1-row/3-row resizing and modal settings
-          - SSH monitor script is sent via stdin to sh -s, eliminating broken nested shell quoting
+          - SSH monitoring script is streamed to `sh -s`, avoiding nested shell quoting failures
           - tailscale0 RX/TX counters are preferred, with non-loopback fallback
-          - SSH stdout is polled without a blocking ReadFile, so reconnect/settings can be used repeatedly
+          - SSH stdout is polled without a permanently blocking ReadFile
+          - remote settings can be reopened repeatedly
           - custom skin background/mask is extended without vertically stretching the original skin
-          - remote settings uses normal WM_COMMAND dispatch and can be reopened repeatedly
+          - SSH private key, ssh-agent and password authentication
+          - password is stored with Windows DPAPI, not plaintext in the INI file
           '@ | Set-Content (Join-Path $patchedRoot 'TAILSCALE_SOURCE_README.md') -Encoding UTF8
 
           Compress-Archive -Path (Join-Path $sourceRoot '*') -DestinationPath (Join-Path $PWD 'TrafficMonitor_V1.86_Tailscale_Full_Source.zip') -Force
@@ -108,7 +110,6 @@ jobs:
 
           New-Item -ItemType Directory -Force $packageDir | Out-Null
           Copy-Item (Join-Path $officialRoot '*') $packageDir -Recurse -Force
-
           Copy-Item TrafficMonitorUpstream/Bin/x64/Release/TrafficMonitor.exe (Join-Path $packageDir 'TrafficMonitor.exe') -Force
           Copy-Item TrafficMonitorUpstream/Bin/x64/Release/*.dll $packageDir -Force -ErrorAction SilentlyContinue
           Copy-Item TrafficMonitorUpstream/LICENSE (Join-Path $packageDir 'LICENSE') -Force
@@ -116,21 +117,18 @@ jobs:
           @'
           TrafficMonitor V1.86 + integrated Tailscale / SSH server monitor
 
-          Usage:
-          1. Start TrafficMonitor.exe normally.
-          2. Right-click the TrafficMonitor main window.
-          3. Choose "Tailscale / SSH Server...".
-          4. Enter Tailscale IP/hostname, SSH user, port and optional private key.
-          5. Enable the remote monitor and click Save.
+          Right-click the TrafficMonitor main window -> Tailscale / SSH Server...
+          Configure Tailscale IP/hostname, SSH user, port, and either private key or password.
 
           Disabled: original TrafficMonitor layout only.
           Enabled: the same TrafficMonitor window adds two rows:
           row 2: remote upload / download / uptime
-          row 3: vector temperature icon / disk icon / CPU icon with values
+          row 3: temperature / root disk usage / CPU usage
 
-          Remote Linux host does not require a monitoring agent.
-          Authentication in this build: Windows OpenSSH private key or ssh-agent.
-          Settings are stored in %APPDATA%\TrafficMonitor\remote_monitor.ini.
+          The Linux server does not need a monitoring agent.
+          Authentication: private key, ssh-agent, or password.
+          Passwords are protected using Windows DPAPI.
+          Settings: %APPDATA%\TrafficMonitor\remote_monitor.ini
           '@ | Set-Content (Join-Path $packageDir 'REMOTE_MONITOR_README.txt') -Encoding UTF8
 
           Get-FileHash (Join-Path $packageDir 'TrafficMonitor.exe') -Algorithm SHA256 | Format-List
