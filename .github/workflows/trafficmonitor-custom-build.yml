@@ -36,6 +36,8 @@ jobs:
           Copy-Item trafficmonitor_remote/RemoteMonitor.cpp TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.cpp -Force
           python trafficmonitor_remote/patch_trafficmonitor.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_icons.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_remote_runtime.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_runtime_fixes.py TrafficMonitorUpstream
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -72,17 +74,13 @@ jobs:
           Build command:
           msbuild TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
 
-          Integrated additions:
-          - TrafficMonitor/RemoteMonitor.h
-          - TrafficMonitor/RemoteMonitor.cpp
-          - modifications to TrafficMonitorDlg.cpp
-          - modifications to SkinFile.cpp
-          - modifications to TrafficMonitor.vcxproj
-          - native TrafficMonitor context-menu SSH/Tailscale settings
-          - remote upload/download, uptime, temperature, root disk, CPU
-          - monochrome vector icons rendered by TrafficMonitor itself
-
-          The _integration folder contains the patch/build helper files used to reproduce the modified tree from the upstream V1.86 tag.
+          Runtime fixes in this build:
+          - always-on-top survives 1-row/3-row resizing and modal settings
+          - SSH monitor script is sent via stdin to sh -s, eliminating broken nested shell quoting
+          - tailscale0 RX/TX counters are preferred, with non-loopback fallback
+          - SSH stdout is polled without a blocking ReadFile, so reconnect/settings can be used repeatedly
+          - custom skin background/mask is extended without vertically stretching the original skin
+          - remote settings uses normal WM_COMMAND dispatch and can be reopened repeatedly
           '@ | Set-Content (Join-Path $patchedRoot 'TAILSCALE_SOURCE_README.md') -Encoding UTF8
 
           Compress-Archive -Path (Join-Path $sourceRoot '*') -DestinationPath (Join-Path $PWD 'TrafficMonitor_V1.86_Tailscale_Full_Source.zip') -Force
