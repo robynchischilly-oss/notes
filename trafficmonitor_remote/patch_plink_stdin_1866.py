@@ -20,10 +20,9 @@ if old not in s:
     raise RuntimeError('collector NUL stdin anchor not found')
 s = s.replace(old, new, 1)
 
-# Add a deterministic diagnostic so the next log proves this exact code path is
-# running and that the child receives an inheritable stdin handle.
+# Deterministic diagnostic: this must appear in the log before collector launch.
 anchor = '        si.hStdInput = nul_input == INVALID_HANDLE_VALUE ? ::GetStdHandle(STD_INPUT_HANDLE) : nul_input;\n'
-replacement = anchor + '''        AppendRemoteLog(std::string("collector: stdin=")\n            + (nul_input == INVALID_HANDLE_VALUE ? "fallback" : "inheritable NUL"));\n'''
+replacement = anchor + '''        if (nul_input == INVALID_HANDLE_VALUE)\n            AppendRemoteLog("collector: stdin=fallback");\n        else\n            AppendRemoteLog("collector: stdin=inheritable NUL");\n'''
 if anchor not in s:
     raise RuntimeError('collector stdin assignment anchor not found')
 s = s.replace(anchor, replacement, 1)
