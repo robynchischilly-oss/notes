@@ -46,21 +46,26 @@ jobs:
           python trafficmonitor_remote/patch_pinned_hostkey_1865.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_tailscale_independent_1865.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_plink_stdin_1866.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_remote_text_style_1867.py TrafficMonitorUpstream
 
-      - name: Validate 1.86.6 source
+      - name: Validate 1.86.7 source
         shell: pwsh
         run: |
           $source = Get-Content TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.cpp -Raw
           $skin = Get-Content TrafficMonitorUpstream/TrafficMonitor/SkinFile.cpp -Raw
-          if ($source -notmatch 'remote monitor 1.86.6 start') { throw '1.86.6 start marker missing' }
-          if ($source -notmatch 'Tailscale / SSH Server \[1.86.6\]') { throw '1.86.6 UI marker missing' }
+          if ($source -notmatch 'remote monitor 1.86.7 start') { throw '1.86.7 start marker missing' }
+          if ($source -notmatch 'Tailscale / SSH Server \[1.86.7\]') { throw '1.86.7 UI marker missing' }
           if ($source -notmatch 'collector: stdin=inheritable NUL') { throw 'inheritable stdin diagnostic missing' }
-          if ($source -notmatch 'CreateFileW\(L"NUL"[\s\S]*&sa, OPEN_EXISTING') { throw 'NUL handle is not inheritable' }
           if ($source -notmatch 'SHA256:oETUWcNxt9RPbgqIP7O2XNwDlVq4djCdURO46nO08H0') { throw 'Pinned host key missing' }
           if ($source -notmatch '/sys/class/net/tailscale0/statistics/rx_bytes') { throw 'tailscale0 RX missing' }
           if ($source -notmatch '/sys/class/net/tailscale0/statistics/tx_bytes') { throw 'tailscale0 TX missing' }
-          if ($source -match "awk -F'\[: \]\+' .*rx \+=.*tx \+=") { throw 'Regression: non-Tailscale traffic aggregation enabled' }
-          if ($skin -notmatch 'DrawRemoteMonitorRows') { throw 'Remote row drawing missing' }
+          if ($skin -notmatch 'use the exact same CFont object as TrafficMonitor') { throw 'font reuse marker missing' }
+          if ($skin -notmatch 'drawer.SetFont\(&font\)') { throw 'remote rows are not using the main skin font' }
+          if ($skin -match 'CString up = L"↑') { throw 'Unicode upload arrow fallback font still present' }
+          if ($skin -match 'CString uptime = L"◷') { throw 'Unicode clock fallback font still present' }
+          if ($skin -notmatch 'RemoteVectorIcon::Upload') { throw 'vector upload icon missing' }
+          if ($skin -notmatch 'RemoteVectorIcon::Download') { throw 'vector download icon missing' }
+          if ($skin -notmatch 'RemoteVectorIcon::Uptime') { throw 'vector uptime icon missing' }
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -91,26 +96,25 @@ jobs:
           Invoke-WebRequest -Uri 'https://the.earth.li/~sgtatham/putty/0.84/w64/plink.exe' -OutFile (Join-Path $packageDir 'plink.exe')
 
           @'
-          TrafficMonitor V1.86 + Tailscale/SSH build 1.86.6
+          TrafficMonitor V1.86 + Tailscale/SSH build 1.86.7
 
-          Fixes:
-          - password SSH authentication verified with pinned host key
-          - Plink monitoring child receives a valid inheritable NUL stdin handle
-          - remote Tailscale traffic is independent from original TrafficMonitor traffic
-          - remote network row reads tailscale0 RX/TX only
-          - no aggregation of eth0/enp*/wlan*/docker* into the Tailscale row
-          - remote row stays topmost during fullscreen applications
-          - diagnostics: %APPDATA%\TrafficMonitor\remote_monitor.log
+          Changes:
+          - remote rows reuse the exact same TrafficMonitor skin CFont object
+          - same skin font family, point size, bold/italic/underline/strike settings and DPI scaling
+          - same DrawWindowText renderer and text-height rectangle as original TrafficMonitor items
+          - row 2 arrows/uptime symbol are vector icons, avoiding Unicode fallback fonts that looked thinner/smaller
+          - row 3 vector icons scale with the same skin text-height
+          - independent tailscale0 RX/TX and previous SSH/topmost fixes retained
           '@ | Set-Content (Join-Path $packageDir 'REMOTE_MONITOR_README.txt') -Encoding UTF8
 
-          Compress-Archive -Path (Join-Path $packageDir '*') -DestinationPath TrafficMonitor_Tailscale_1.86.6_Portable_x64.zip -Force
+          Compress-Archive -Path (Join-Path $packageDir '*') -DestinationPath TrafficMonitor_Tailscale_1.86.7_Portable_x64.zip -Force
           Get-FileHash (Join-Path $packageDir 'TrafficMonitor.exe') -Algorithm SHA256 | Format-List
 
       - name: Upload portable package
         uses: actions/upload-artifact@v4
         with:
-          name: TrafficMonitor-Tailscale-1.86.6-x64
-          path: TrafficMonitor_Tailscale_1.86.6_Portable_x64.zip
+          name: TrafficMonitor-Tailscale-1.86.7-x64
+          path: TrafficMonitor_Tailscale_1.86.7_Portable_x64.zip
           if-no-files-found: error
 
       - name: Install Inno Setup
@@ -125,7 +129,7 @@ jobs:
           [Setup]
           AppId={{A96D9152-6D85-4F82-87B4-62F56F990186}
           AppName=TrafficMonitor Tailscale
-          AppVersion=1.86.6
+          AppVersion=1.86.7
           AppPublisher=TrafficMonitor custom build
           DefaultDirName={localappdata}\Programs\TrafficMonitorTailscale
           DefaultGroupName=TrafficMonitor Tailscale
@@ -134,7 +138,7 @@ jobs:
           ArchitecturesAllowed=x64compatible
           ArchitecturesInstallIn64BitMode=x64compatible
           OutputDir=installer
-          OutputBaseFilename=TrafficMonitor_V1.86_Tailscale_1.86.6_Setup_x64
+          OutputBaseFilename=TrafficMonitor_V1.86_Tailscale_1.86.7_Setup_x64
           Compression=lzma2
           SolidCompression=yes
           WizardStyle=modern
@@ -157,11 +161,11 @@ jobs:
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           & $iscc installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed: $LASTEXITCODE" }
-          Get-FileHash installer/TrafficMonitor_V1.86_Tailscale_1.86.6_Setup_x64.exe -Algorithm SHA256 | Format-List
+          Get-FileHash installer/TrafficMonitor_V1.86_Tailscale_1.86.7_Setup_x64.exe -Algorithm SHA256 | Format-List
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: TrafficMonitor-Tailscale-1.86.6-Installer-x64
-          path: installer/TrafficMonitor_V1.86_Tailscale_1.86.6_Setup_x64.exe
+          name: TrafficMonitor-Tailscale-1.86.7-Installer-x64
+          path: installer/TrafficMonitor_V1.86_Tailscale_1.86.7_Setup_x64.exe
           if-no-files-found: error
