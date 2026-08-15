@@ -39,6 +39,8 @@ jobs:
           python trafficmonitor_remote/patch_remote_runtime.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_runtime_fixes.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_password_auth.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_plink_transport.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_remote_topmost.py TrafficMonitorUpstream
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -75,13 +77,16 @@ jobs:
           msbuild TrafficMonitor.sln -m -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143
 
           Fixes/features:
-          - always-on-top survives 1-row/3-row resizing and modal settings
-          - SSH monitoring script is streamed to `sh -s`, avoiding nested shell quoting failures
+          - remote monitor mode remains TOPMOST over fullscreen applications
+          - legacy hide-on-fullscreen is ignored while remote monitoring is enabled
+          - password SSH uses bundled PuTTY Plink instead of depending on Windows OpenSSH ASKPASS
+          - key / ssh-agent authentication can still use Windows OpenSSH
+          - SSH monitoring script is streamed to `sh -s`
           - tailscale0 RX/TX counters are preferred, with non-loopback fallback
           - SSH stdout is polled without a permanently blocking ReadFile
+          - non-monitor SSH errors are logged to %APPDATA%\TrafficMonitor\remote_monitor.log
           - remote settings can be reopened repeatedly
           - custom skin background/mask is extended without vertically stretching the original skin
-          - SSH private key, ssh-agent and password authentication
           - password is stored with Windows DPAPI, not plaintext in the INI file
           '@ | Set-Content (Join-Path $patchedRoot 'TAILSCALE_SOURCE_README.md') -Encoding UTF8
 
@@ -114,6 +119,18 @@ jobs:
           Copy-Item TrafficMonitorUpstream/Bin/x64/Release/*.dll $packageDir -Force -ErrorAction SilentlyContinue
           Copy-Item TrafficMonitorUpstream/LICENSE (Join-Path $packageDir 'LICENSE') -Force
 
+          # Bundle official PuTTY Plink 0.84 x64 for reliable non-interactive password SSH.
+          Invoke-WebRequest -Uri 'https://the.earth.li/~sgtatham/putty/0.84/w64/plink.exe' -OutFile (Join-Path $packageDir 'plink.exe')
+          @'
+          PuTTY is copyright 1997-2026 Simon Tatham.
+
+          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+          The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+          '@ | Set-Content (Join-Path $packageDir 'PUTTY_LICENSE.txt') -Encoding UTF8
+
           @'
           TrafficMonitor V1.86 + integrated Tailscale / SSH server monitor
 
@@ -121,17 +138,19 @@ jobs:
           Configure Tailscale IP/hostname, SSH user, port, and either private key or password.
 
           Disabled: original TrafficMonitor layout only.
-          Enabled: the same TrafficMonitor window adds two rows:
+          Enabled: the same TrafficMonitor window adds two rows and stays visible/topmost even when another application goes fullscreen.
           row 2: remote upload / download / uptime
           row 3: temperature / root disk usage / CPU usage
 
+          Password SSH is handled by bundled PuTTY Plink. Key/agent auth can use Windows OpenSSH.
           The Linux server does not need a monitoring agent.
-          Authentication: private key, ssh-agent, or password.
-          Passwords are protected using Windows DPAPI.
+          Passwords are protected using Windows DPAPI in the saved settings.
           Settings: %APPDATA%\TrafficMonitor\remote_monitor.ini
+          Diagnostics: %APPDATA%\TrafficMonitor\remote_monitor.log
           '@ | Set-Content (Join-Path $packageDir 'REMOTE_MONITOR_README.txt') -Encoding UTF8
 
           Get-FileHash (Join-Path $packageDir 'TrafficMonitor.exe') -Algorithm SHA256 | Format-List
+          Get-FileHash (Join-Path $packageDir 'plink.exe') -Algorithm SHA256 | Format-List
 
       - name: Upload complete x64 package
         uses: actions/upload-artifact@v4
@@ -153,7 +172,7 @@ jobs:
           [Setup]
           AppId={{A96D9152-6D85-4F82-87B4-62F56F990186}
           AppName=TrafficMonitor Tailscale
-          AppVersion=1.86.1
+          AppVersion=1.86.2
           AppPublisher=TrafficMonitor custom build
           DefaultDirName={localappdata}\Programs\TrafficMonitor
           DefaultGroupName=TrafficMonitor
