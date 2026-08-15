@@ -139,3 +139,61 @@ jobs:
           name: TrafficMonitor-Tailscale-x64
           path: package/**
           if-no-files-found: error
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force installer | Out-Null
+          @'
+          [Setup]
+          AppId={{A96D9152-6D85-4F82-87B4-62F56F990186}
+          AppName=TrafficMonitor Tailscale
+          AppVersion=1.86.1
+          AppPublisher=TrafficMonitor custom build
+          DefaultDirName={localappdata}\Programs\TrafficMonitor
+          DefaultGroupName=TrafficMonitor
+          DisableProgramGroupPage=yes
+          PrivilegesRequired=lowest
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          OutputDir=installer
+          OutputBaseFilename=TrafficMonitor_V1.86_Tailscale_Fixed_Setup_x64
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          CloseApplications=yes
+          RestartApplications=no
+          UninstallDisplayIcon={app}\TrafficMonitor.exe
+          SetupLogging=yes
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+
+          [Files]
+          Source: "package\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\TrafficMonitor"; Filename: "{app}\TrafficMonitor.exe"
+          Name: "{autodesktop}\TrafficMonitor"; Filename: "{app}\TrafficMonitor.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\TrafficMonitor.exe"; Description: "Launch TrafficMonitor"; Flags: nowait postinstall skipifsilent
+          '@ | Set-Content installer.iss -Encoding UTF8
+
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found: $iscc" }
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          Get-FileHash installer/TrafficMonitor_V1.86_Tailscale_Fixed_Setup_x64.exe -Algorithm SHA256 | Format-List
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrafficMonitor-Tailscale-Installer-x64
+          path: installer/TrafficMonitor_V1.86_Tailscale_Fixed_Setup_x64.exe
+          if-no-files-found: error
