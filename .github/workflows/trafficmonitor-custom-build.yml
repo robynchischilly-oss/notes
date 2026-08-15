@@ -41,6 +41,18 @@ jobs:
           python trafficmonitor_remote/patch_password_auth.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_plink_transport.py TrafficMonitorUpstream
           python trafficmonitor_remote/patch_remote_topmost.py TrafficMonitorUpstream
+          python trafficmonitor_remote/patch_serverbox_status_logic.py TrafficMonitorUpstream
+
+      - name: Validate remote collector source
+        shell: pwsh
+        run: |
+          $source = Get-Content TrafficMonitorUpstream/TrafficMonitor/RemoteMonitor.cpp -Raw
+          if ($source -notmatch 'LR"TM_SCRIPT\(export LC_ALL=C') {
+            throw 'Multiline Linux status collector was not injected.'
+          }
+          if ($source.Contains('L"export LC_ALL=C\\n"')) {
+            throw 'Regression: collector contains literal backslash-n line separators.'
+          }
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -81,8 +93,10 @@ jobs:
           - legacy hide-on-fullscreen is ignored while remote monitoring is enabled
           - password SSH uses bundled PuTTY Plink instead of depending on Windows OpenSSH ASKPASS
           - key / ssh-agent authentication can still use Windows OpenSSH
-          - SSH monitoring script is streamed to `sh -s`
-          - tailscale0 RX/TX counters are preferred, with non-loopback fallback
+          - ServerBox-style Linux status collection from /proc, /sys and df
+          - fixed the literal \\n shell-script serialization bug that prevented any TM frames
+          - tailscale0 RX/TX counters are preferred, with /proc/net/dev fallback
+          - optional metrics are parsed independently so one unavailable sensor does not blank the row
           - SSH stdout is polled without a permanently blocking ReadFile
           - non-monitor SSH errors are logged to %APPDATA%\TrafficMonitor\remote_monitor.log
           - remote settings can be reopened repeatedly
@@ -143,6 +157,7 @@ jobs:
           row 3: temperature / root disk usage / CPU usage
 
           Password SSH is handled by bundled PuTTY Plink. Key/agent auth can use Windows OpenSSH.
+          Linux status collection follows the same robust principle as ServerBox: standard /proc and /sys sources, with independent parsing/fallbacks.
           The Linux server does not need a monitoring agent.
           Passwords are protected using Windows DPAPI in the saved settings.
           Settings: %APPDATA%\TrafficMonitor\remote_monitor.ini
@@ -172,7 +187,7 @@ jobs:
           [Setup]
           AppId={{A96D9152-6D85-4F82-87B4-62F56F990186}
           AppName=TrafficMonitor Tailscale
-          AppVersion=1.86.2
+          AppVersion=1.86.3
           AppPublisher=TrafficMonitor custom build
           DefaultDirName={localappdata}\Programs\TrafficMonitor
           DefaultGroupName=TrafficMonitor
@@ -201,7 +216,7 @@ jobs:
           Name: "{autodesktop}\TrafficMonitor"; Filename: "{app}\TrafficMonitor.exe"; Tasks: desktopicon
 
           [Run]
-          Filename: "{app}\TrafficMonitor.exe"; Description: "Launch TrafficMonitor"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\TrafficMonitor.exe"; Description: "Launch TrafficMonitor"; Flags: nowait postinstall skipifsilent shellexec
           '@ | Set-Content installer.iss -Encoding UTF8
 
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
