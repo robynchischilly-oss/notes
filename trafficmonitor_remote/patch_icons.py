@@ -14,6 +14,9 @@ if start < 0 or end < 0:
 
 helper = r'''enum class RemoteVectorIcon
 {
+    Upload,
+    Download,
+    Uptime,
     Temperature,
     Disk,
     Cpu
@@ -34,50 +37,82 @@ static void DrawRemoteVectorIcon(IDrawCommon& drawer, RemoteVectorIcon icon, CRe
     if (y < rect.top)
         y = rect.top;
 
+    const int stroke = size >= 11 ? 2 : 1;
+
     switch (icon)
     {
+    case RemoteVectorIcon::Upload:
+    {
+        const int cx = x + size / 2;
+        const int head = (std::max)(2, size / 3);
+        drawer.FillRect(CRect(cx, y + 1, cx + stroke, y + size - 1), color);
+        for (int i = 0; i < head; ++i)
+        {
+            drawer.FillRect(CRect(cx - i, y + 1 + i, cx + i + stroke, y + 2 + i), color);
+        }
+        break;
+    }
+    case RemoteVectorIcon::Download:
+    {
+        const int cx = x + size / 2;
+        const int head = (std::max)(2, size / 3);
+        drawer.FillRect(CRect(cx, y + 1, cx + stroke, y + size - 1), color);
+        for (int i = 0; i < head; ++i)
+        {
+            drawer.FillRect(CRect(cx - i, y + size - 2 - i, cx + i + stroke, y + size - 1 - i), color);
+        }
+        break;
+    }
+    case RemoteVectorIcon::Uptime:
+    {
+        const int inset = 1;
+        CRect body(x + inset, y + inset, x + size - inset, y + size - inset);
+        drawer.DrawRectOutLine(body, color, stroke);
+        const int cx = x + size / 2;
+        const int cy = y + size / 2;
+        drawer.FillRect(CRect(cx, y + 3, cx + stroke, cy + 1), color);
+        drawer.FillRect(CRect(cx, cy, x + size - 3, cy + stroke), color);
+        break;
+    }
     case RemoteVectorIcon::Temperature:
     {
-        // Thermometer: narrow stem + bulb. Pure primitives keep it sharp on every skin/DPI.
         int cx = x + size / 2;
         int bulb = size >= 11 ? 5 : 4;
         int stem_top = y;
         int stem_bottom = y + size - bulb + 1;
-        drawer.DrawRectOutLine(CRect(cx - 1, stem_top, cx + 2, stem_bottom), color, 1);
-        drawer.FillRect(CRect(cx, stem_top + 2, cx + 1, stem_bottom), color);
+        drawer.DrawRectOutLine(CRect(cx - 1, stem_top, cx + 2, stem_bottom), color, stroke);
+        drawer.FillRect(CRect(cx, stem_top + 2, cx + stroke, stem_bottom), color);
         drawer.FillRect(CRect(cx - bulb / 2, y + size - bulb, cx - bulb / 2 + bulb, y + size), color);
         break;
     }
     case RemoteVectorIcon::Disk:
     {
-        // Drive outline, platter/status line and a small activity indicator.
         int top = y + 1;
         int bottom = y + size - 1;
-        drawer.DrawRectOutLine(CRect(x, top, x + size, bottom), color, 1);
+        drawer.DrawRectOutLine(CRect(x, top, x + size, bottom), color, stroke);
         drawer.FillRect(CRect(x + 2, bottom - 3, x + size - 2, bottom - 2), color);
         drawer.FillRect(CRect(x + size - 4, bottom - 5, x + size - 2, bottom - 3), color);
         break;
     }
     case RemoteVectorIcon::Cpu:
     {
-        // Chip body and pins.
         int body_left = x + 2;
         int body_top = y + 2;
         int body_right = x + size - 2;
         int body_bottom = y + size - 2;
-        drawer.DrawRectOutLine(CRect(body_left, body_top, body_right, body_bottom), color, 1);
+        drawer.DrawRectOutLine(CRect(body_left, body_top, body_right, body_bottom), color, stroke);
         drawer.FillRect(CRect(body_left + 2, body_top + 2, body_right - 2, body_bottom - 2), color);
 
-        int mid1 = x + size / 3;
-        int mid2 = x + (size * 2) / 3;
-        drawer.FillRect(CRect(mid1, y, mid1 + 1, body_top), color);
-        drawer.FillRect(CRect(mid2, y, mid2 + 1, body_top), color);
-        drawer.FillRect(CRect(mid1, body_bottom, mid1 + 1, y + size), color);
-        drawer.FillRect(CRect(mid2, body_bottom, mid2 + 1, y + size), color);
-        drawer.FillRect(CRect(x, mid1, body_left, mid1 + 1), color);
-        drawer.FillRect(CRect(x, mid2, body_left, mid2 + 1), color);
-        drawer.FillRect(CRect(body_right, mid1, x + size, mid1 + 1), color);
-        drawer.FillRect(CRect(body_right, mid2, x + size, mid2 + 1), color);
+        int pin1 = x + size / 3;
+        int pin2 = x + (size * 2) / 3;
+        drawer.FillRect(CRect(pin1, y, pin1 + 1, body_top), color);
+        drawer.FillRect(CRect(pin2, y, pin2 + 1, body_top), color);
+        drawer.FillRect(CRect(pin1, body_bottom, pin1 + 1, y + size), color);
+        drawer.FillRect(CRect(pin2, body_bottom, pin2 + 1, y + size), color);
+        drawer.FillRect(CRect(x, y + size / 3, body_left, y + size / 3 + 1), color);
+        drawer.FillRect(CRect(x, y + (size * 2) / 3, body_left, y + (size * 2) / 3 + 1), color);
+        drawer.FillRect(CRect(body_right, y + size / 3, x + size, y + size / 3 + 1), color);
+        drawer.FillRect(CRect(body_right, y + (size * 2) / 3, x + size, y + (size * 2) / 3 + 1), color);
         break;
     }
     }
@@ -90,6 +125,9 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
         return;
 
     const RemoteMonitorSnapshot data = remote.GetSnapshot();
+
+    // IMPORTANT: use the exact same CFont object as TrafficMonitor's normal
+    // DrawItemsInfo pass. No remote font, size, weight or style override.
     drawer.SetFont(&font);
 
     const int col_w = width / 3;
@@ -98,13 +136,6 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
         const int left = col * col_w;
         const int right = (col == 2 ? width : (col + 1) * col_w);
         return CRect(left, top + row * row_height, right, top + (row + 1) * row_height);
-    };
-
-    auto draw_text_cell = [&](int row, int col, const CString& value)
-    {
-        if (value.IsEmpty())
-            return;
-        drawer.DrawWindowText(cell_rect(row, col), value, color, IDrawCommon::Alignment::CENTER);
     };
 
     auto draw_icon_value = [&](int row, int col, RemoteVectorIcon icon, const CString& value)
@@ -119,10 +150,11 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
         if (icon_size > 13)
             icon_size = 13;
 
-        const int gap = 3;
+        const int gap = (std::max)(2, row_height / 8);
         int text_width = drawer.GetTextWidth(value);
         if (text_width <= 0)
             text_width = row_height * 2;
+
         int total_width = icon_size + gap + text_width;
         if (total_width > cell.Width() - 2)
             total_width = cell.Width() - 2;
@@ -131,11 +163,11 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
         if (left < cell.left + 1)
             left = cell.left + 1;
 
-        CRect icon_rect(left, cell.top + (cell.Height() - icon_size) / 2,
-            left + icon_size, cell.top + (cell.Height() - icon_size) / 2 + icon_size);
+        const int icon_top = cell.top + (cell.Height() - icon_size) / 2;
+        CRect icon_rect(left, icon_top, left + icon_size, icon_top + icon_size);
         DrawRemoteVectorIcon(drawer, icon, icon_rect, color);
 
-        int text_left = left + icon_size + gap;
+        const int text_left = left + icon_size + gap;
         if (text_left < cell.right)
         {
             CRect text_rect(text_left, cell.top, cell.right - 1, cell.bottom);
@@ -143,9 +175,9 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
         }
     };
 
-    CString up = L"↑ --";
-    CString down = L"↓ --";
-    CString uptime = L"◷ --";
+    CString up = L"--";
+    CString down = L"--";
+    CString uptime = L"--";
     CString temperature = L"--";
     CString disk = L"--";
     CString cpu = L"--";
@@ -153,11 +185,11 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
     if (data.has_data)
     {
         if (remote.ShowUpload())
-            up = L"↑ " + remote.FormatSpeed(data.upload_bps);
+            up = remote.FormatSpeed(data.upload_bps);
         if (remote.ShowDownload())
-            down = L"↓ " + remote.FormatSpeed(data.download_bps);
+            down = remote.FormatSpeed(data.download_bps);
         if (remote.ShowUptime())
-            uptime = L"◷ " + remote.FormatUptime(data.uptime_seconds);
+            uptime = remote.FormatUptime(data.uptime_seconds);
         if (remote.ShowTemperature() && data.temperature_c >= 0)
             temperature.Format(L"%d°", data.temperature_c);
         if (remote.ShowDisk())
@@ -173,10 +205,11 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
     if (!remote.ShowDisk()) disk.Empty();
     if (!remote.ShowCpu()) cpu.Empty();
 
-    draw_text_cell(0, 0, up);
-    draw_text_cell(0, 1, down);
-    draw_text_cell(0, 2, uptime);
-
+    // Vector symbols avoid Unicode fallback fonts. All actual text therefore
+    // comes from TrafficMonitor's own skin font and has identical size/weight.
+    draw_icon_value(0, 0, RemoteVectorIcon::Upload, up);
+    draw_icon_value(0, 1, RemoteVectorIcon::Download, down);
+    draw_icon_value(0, 2, RemoteVectorIcon::Uptime, uptime);
     draw_icon_value(1, 0, RemoteVectorIcon::Temperature, temperature);
     draw_icon_value(1, 1, RemoteVectorIcon::Disk, disk);
     draw_icon_value(1, 2, RemoteVectorIcon::Cpu, cpu);
@@ -186,4 +219,4 @@ static void DrawRemoteMonitorRows(IDrawCommon& drawer, CFont& font, int width, i
 
 text = text[:start] + helper + text[end:]
 p.write_text(text, encoding="utf-8-sig")
-print("TrafficMonitor remote row switched to monochrome vector icons")
+print("TrafficMonitor remote rows now reuse the exact main skin font/style")
